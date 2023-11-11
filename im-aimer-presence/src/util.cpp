@@ -41,8 +41,8 @@ uint64_t getTimestamp() {
 void initNTP() {
     configTime(0, 0, ntpServer);
     setenv("TZ", TZ_INFO, 1);
-    if (getNTPtime(3)) {
-    } // wait up to 3sec to sync
+    if (getNTPtime(10)) {
+    } // wait up to 10sec to sync
     else {
         // DEBUG_println("Time not set");
     }

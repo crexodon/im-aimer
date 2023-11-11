@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include "wifi_mac_sniffer.hpp"
 #include "util.h"
+#include "secrets.h"    // needs to be renamed from secrets.sample.h
 
 #define WIFI_CHANNEL_SWITCH_INTERVAL (500)
 #define WIFI_CHANNEL_MAX (13)
@@ -22,21 +23,30 @@ void setup() {
     Serial.begin(115200);
     Serial.println("AImer Hello World!");
 
-    // probably need WiFi first
-    initNTP();
+    Serial.print("Connecting to WiFi... ");
+    Serial.flush();
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    uint32_t start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < 3000) {  }
+    Serial.print("WiFi connected! IP: ");
+    Serial.printf("%s\n", WiFi.localIP().toString().c_str());
 
-    tcpip_adapter_init();
-    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_country(&wifi_country)); /* set country for channel range [1, 13] */
-    ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_NULL));
-    ESP_ERROR_CHECK(esp_wifi_start());
-    esp_wifi_set_promiscuous(true);
+    Serial.print("Initializing NTP... ");
+    Serial.flush();
+    initNTP();
+    Serial.println("done.");
+
     esp_wifi_set_promiscuous_rx_cb(prom_pkt_callback);
+    sniffer.start();
 }
 
 void loop() {    
-    sniffer.loop();
+    bool running = sniffer.loop(true);
+    if (!running) {
+        // TODO: send data to MQTT
+        delay(10000);
+        
+        sniffer.start();
+    }
 }

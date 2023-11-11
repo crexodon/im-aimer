@@ -7,3 +7,4 @@
 README
 .vscode
 *.bak
+secrets.h

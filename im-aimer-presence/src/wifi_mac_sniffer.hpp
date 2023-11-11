@@ -1,30 +1,67 @@
+#pragma once
+
 #include "esp_wifi.h"
 #include <Arduino.h>
 #include <map>
 #include <time.h>
-
-extern const char *getISOTimeStr();
+#include "util.h"
+#include "secrets.h"
 
 class WiFiMACSniffer {
   public:
-    void loop() {
+
+    void start() {
+        _prevWiFiMode = WiFi.getMode();
+        WiFi.disconnect();
+        esp_wifi_set_promiscuous(true);
+        _lastChanSwitch = millis();
+        _clients.clear();
+        _channel = 1;
+        esp_wifi_set_channel(_channel, WIFI_SECOND_CHAN_NONE);
+    }
+
+    void stop() {
+        esp_wifi_set_promiscuous(false);
+        // esp_wifi_stop();
+        WiFi.mode(_prevWiFiMode);
+        WiFi.begin(WIFI_SSID, WIFI_PASS);
+    }
+
+    // Returns true when running
+    bool loop(bool stopAfter1Iteration) {
+        bool promEnabled;
+        esp_wifi_get_promiscuous(&promEnabled);
+
+        if (!promEnabled)
+            return false;
+
         if (millis() - _lastChanSwitch >= WIFI_CHANNEL_SWITCH_INTERVAL) {
-            _lastChanSwitch = millis();
-            esp_wifi_set_channel(_channel, WIFI_SECOND_CHAN_NONE);
-            _channel = (_channel % WIFI_CHANNEL_MAX) + 1;
+            if (promEnabled) {
+                
+                _lastChanSwitch = millis();
+                esp_wifi_set_channel(_channel, WIFI_SECOND_CHAN_NONE);
+                _channel = (_channel % WIFI_CHANNEL_MAX) + 1;
 
-            if (_channel == 1) {
-                // TODO: do data parsing
-                Serial.printf("Number of clients: %2d\n", _clients.size());
-                for (auto const &client : _clients) {
-                    uint64_t mac = client.first;
-                    client_metadata_t data = _clients[mac];
+                if (_channel == 1) {
+                    // TODO: do data parsing?
+                    Serial.printf("%lld  Number of clients: %2d\n", getTimestamp(), _clients.size());
+                    for (auto const &client : _clients) {
+                        uint64_t mac = client.first;
+                        client_metadata_t data = _clients[mac];
 
-                    // Serial.printf("[" MACSTR "] Chan: %2d, RSSI: %3d, Count: %4d, lastSeen: %6d\n", MAC2STR((uint8_t*)&mac),
-                    // data.channel, data.rssi, data.packetCount, data.lastSeen);
+                        Serial.printf("[" MACSTR "] Chan: %2d, RSSI: %3d, Type: %d, Count: %4d, lastSeen: %6lld\n", MAC2STR((uint8_t*)&mac),
+                            data.channel, data.rssi, data.packetType, data.packetCount, data.lastSeen);
+                    }
+
+                    if (stopAfter1Iteration) {
+                        stop();
+                    }
+
+                    return false;   // done
                 }
             }
         }
+        return true;
     }
 
     void prom_pkt_callback(void *buf, wifi_promiscuous_pkt_type_t type) {
@@ -70,13 +107,11 @@ class WiFiMACSniffer {
                 return;
         }
 
-
-
-
         client_metadata_t toSave = {
             .channel = promPkt->rx_ctrl.channel,
             .rssi = promPkt->rx_ctrl.rssi,
-            .lastSeen = millis(),   // TODO: fix, currently somehow broken
+            .packetType = (unsigned)macFrame->hdr.frame_ctrl.subtype,
+            .lastSeen = getTimestamp(),   
         };
         try {
             client_metadata_t prevStats = _clients.at(clientMacAddr);
@@ -93,6 +128,7 @@ class WiFiMACSniffer {
         uint8_t channel;
         int8_t rssi;
         uint32_t packetCount;
+        uint8_t packetType;
         uint64_t lastSeen;
     } client_metadata_t;
 #pragma pack(pop)
@@ -103,6 +139,7 @@ class WiFiMACSniffer {
 
     uint32_t _lastChanSwitch = 0;
     uint8_t _channel = 1;
+    wifi_mode_t _prevWiFiMode = WIFI_MODE_STA;
 
     std::map<uint64_t, client_metadata_t> _clients;
 
