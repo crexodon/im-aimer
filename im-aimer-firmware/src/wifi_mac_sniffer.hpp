@@ -27,6 +27,15 @@ class WiFiMACSniffer {
         WiFi.begin(WIFI_SSID, WIFI_PASS);
     }
 
+    int getCount() {
+        bool promEnabled;
+        esp_wifi_get_promiscuous(&promEnabled);
+        if (promEnabled) // still running
+            return -1;
+        else
+            return _clients.size();
+    }
+
     // Returns true when running
     bool loop(bool stopAfter1Iteration) {
         bool promEnabled;
